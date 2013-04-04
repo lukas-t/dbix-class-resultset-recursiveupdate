@@ -260,7 +260,7 @@ is $dbic_trace->count_messages("^INSERT INTO dvdtag "), 2, "remove several: upda
 
 is $dvd_item->tags_rs->count, 2, "remove several: DVD item has 2 tags";
 
-# doint this 2 times to test identical behaviour
+# doing this 2 times to test identical behaviour
 $tag_ids = [2,4];
 %updates = (
 	id => $dvd_item->id,

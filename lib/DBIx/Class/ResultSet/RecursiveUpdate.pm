@@ -26,13 +26,14 @@ sub recursive_update {
         $fixed_fields = $attrs;
     }
 
-    return DBIx::Class::ResultSet::RecursiveUpdate::Functions::recursive_update(
+    return
+      DBIx::Class::ResultSet::RecursiveUpdate::Functions::recursive_update(
         resultset         => $self,
         updates           => $updates,
         fixed_fields      => $fixed_fields,
         unknown_params_ok => $unknown_params_ok,
         m2m_force_set_rel => $m2m_force_set_rel,
-    );
+      );
 }
 
 package DBIx::Class::ResultSet::RecursiveUpdate::Functions;
@@ -45,34 +46,35 @@ sub recursive_update {
     my %params = @_;
     my ( $self, $updates, $fixed_fields, $object, $resolved, $if_not_submitted,
         $unknown_params_ok, $m2m_force_set_rel )
-        = @params{
+      = @params{
         qw/resultset updates fixed_fields object resolved if_not_submitted unknown_params_ok m2m_force_set_rel/
-        };
+      };
     $resolved ||= {};
     $ENV{DBIC_NULLABLE_KEY_NOWARN} = 1;
 
     my $source = $self->result_source;
 
     croak "first parameter needs to be defined"
-        unless defined $updates;
+      unless defined $updates;
 
     croak "first parameter needs to be a hashref"
-        unless ref($updates) eq 'HASH';
+      unless ref($updates) eq 'HASH';
 
     croak 'fixed fields needs to be an arrayref'
-        if defined $fixed_fields && ref $fixed_fields ne 'ARRAY';
+      if defined $fixed_fields && ref $fixed_fields ne 'ARRAY';
 
     # always warn about additional parameters if storage debugging is enabled
     $unknown_params_ok = 0
-        if $source->storage->debug;
+      if $source->storage->debug;
 
     if ( blessed($updates) && $updates->isa('DBIx::Class::Row') ) {
         return $updates;
     }
 
     my @pks = $source->primary_columns;
-    if ( !defined $object &&
-        all { exists $updates->{$_} } @pks ) {
+    if ( !defined $object
+        && all { exists $updates->{$_} } @pks )
+    {
         my @pks = map { $updates->{$_} } @pks;
         $object = $self->find( @pks, { key => 'primary' } );
     }
@@ -81,12 +83,12 @@ sub recursive_update {
     }
 
     my %fixed_fields = map { $_ => 1 } @$fixed_fields
-        if $fixed_fields;
+      if $fixed_fields;
 
     # the updates hashref might contain the pk columns
     # but with an undefined value
     my @missing =
-        grep { !defined $updates->{$_} && !exists $fixed_fields{$_} } @pks;
+      grep { !defined $updates->{$_} && !exists $fixed_fields{$_} } @pks;
 
     if ( !defined $object && scalar @missing == 0 ) {
         $object = $self->find( $updates, { key => 'primary' } );
@@ -104,7 +106,7 @@ sub recursive_update {
     }
 
     $object = $self->new_result( {} )
-        unless defined $object;
+      unless defined $object;
 
     # direct column accessors
     my %columns;
@@ -123,8 +125,10 @@ sub recursive_update {
     for my $name ( keys %$updates ) {
 
         # columns
-        if ( exists $columns_by_accessor{$name} &&
-            !( $source->has_relationship($name) && ref( $updates->{$name} ) ) ) {
+        if ( exists $columns_by_accessor{$name}
+            && !( $source->has_relationship($name) && ref( $updates->{$name} ) )
+          )
+        {
             $columns{$name} = $updates->{$name};
             next;
         }
@@ -143,12 +147,15 @@ sub recursive_update {
 
         # many-to-many helper accessors
         if ( is_m2m( $self, $name ) ) {
+
             # Transform m2m data into recursive has_many data
             # if IntrospectableM2M is in use.
             #
             # This removes the overhead related to deleting and
             # re-adding all relationships.
-            if ( !$m2m_force_set_rel && $source->result_class->can('_m2m_metadata') ) {
+            if (  !$m2m_force_set_rel
+                && $source->result_class->can('_m2m_metadata') )
+            {
                 my $meta        = $source->result_class->_m2m_metadata->{$name};
                 my $bridge_rel  = $meta->{relation};
                 my $foreign_rel = $meta->{foreign_relation};
@@ -156,9 +163,10 @@ sub recursive_update {
                 $post_updates{$bridge_rel} = [
                     map {
                         { $foreign_rel => $_ }
-                        } @{ $updates->{$name} }
+                    } @{ $updates->{$name} }
                 ];
             }
+
             # Fall back to set_$rel if IntrospectableM2M
             # is not available. (removing and re-adding all relationships)
             else {
@@ -179,7 +187,7 @@ sub recursive_update {
         # don't throw a warning instead of an exception to give users
         # time to adapt to the new API
         carp(
-            "No such column, relationship, many-to-many helper accessor or generic accessor '$name'"
+"No such column, relationship, many-to-many helper accessor or generic accessor '$name'"
         ) unless $unknown_params_ok;
 
     }
@@ -193,7 +201,8 @@ sub recursive_update {
         $object->$name( $other_methods{$name} );
     }
     for my $name ( keys %pre_updates ) {
-        _update_relation( $self, $name, $pre_updates{$name}, $object, $if_not_submitted );
+        _update_relation( $self, $name, $pre_updates{$name}, $object,
+            $if_not_submitted, $unknown_params_ok, $m2m_force_set_rel );
     }
 
     # $self->_delete_empty_auto_increment($object);
@@ -228,10 +237,12 @@ sub recursive_update {
             }
             elsif ( ref $elem eq 'HASH' ) {
                 push @rows,
-                    recursive_update(
-                    resultset => $rel_source->resultset,
-                    updates   => $elem
-                    );
+                  recursive_update(
+                    resultset         => $rel_source->resultset,
+                    updates           => $elem,
+                    m2m_force_set_rel => $m2m_force_set_rel,
+                    unknown_params_ok => $unknown_params_ok,
+                  );
             }
             else {
                 push @rows, $rel_source->resultset->find( { $pk => $elem } );
@@ -241,7 +252,8 @@ sub recursive_update {
         $object->$set_meth( \@rows );
     }
     for my $name ( keys %post_updates ) {
-        _update_relation( $self, $name, $post_updates{$name}, $object, $if_not_submitted );
+        _update_relation( $self, $name, $post_updates{$name}, $object,
+            $if_not_submitted, $unknown_params_ok, $m2m_force_set_rel );
     }
     delete $ENV{DBIC_NULLABLE_KEY_NOWARN};
     return $object;
@@ -262,28 +274,33 @@ sub _get_columns_by_accessor {
 
 # Arguments: $rs, $name, $updates, $row, $if_not_submitted
 sub _update_relation {
-    my ( $self, $name, $updates, $object, $if_not_submitted ) = @_;
+    my ( $self, $name, $updates, $object, $if_not_submitted,
+        $unknown_params_ok, $m2m_force_set_rel )
+      = @_;
 
     # this should never happen because we're checking the paramters passed to
     # recursive_update, but just to be sure...
     $object->throw_exception("No such relationship '$name'")
-        unless $object->has_relationship($name);
+      unless $object->has_relationship($name);
 
     my $info = $object->result_source->relationship_info($name);
 
     # get a related resultset without a condition
-    my $related_resultset = $self->related_resultset($name)->result_source->resultset;
+    my $related_resultset =
+      $self->related_resultset($name)->result_source->resultset;
     my $resolved;
     if ( $self->result_source->can('_resolve_condition') ) {
-        $resolved = $self->result_source->_resolve_condition( $info->{cond}, $name, $object );
+        $resolved =
+          $self->result_source->_resolve_condition( $info->{cond}, $name,
+            $object );
     }
     else {
         $self->throw_exception("result_source must support _resolve_condition");
     }
 
     $resolved = {}
-        if defined $DBIx::Class::ResultSource::UNRESOLVABLE_CONDITION &&
-            $DBIx::Class::ResultSource::UNRESOLVABLE_CONDITION == $resolved;
+      if defined $DBIx::Class::ResultSource::UNRESOLVABLE_CONDITION
+      && $DBIx::Class::ResultSource::UNRESOLVABLE_CONDITION == $resolved;
 
     my @rel_cols = keys %{ $info->{cond} };
     map { s/^foreign\.// } @rel_cols;
@@ -292,28 +309,32 @@ sub _update_relation {
     my $all_fks_nullable = 1;
     for my $rel_col (@rel_cols) {
         $all_fks_nullable = 0
-            unless $related_resultset->result_source->column_info($rel_col)->{is_nullable};
+          unless $related_resultset->result_source->column_info($rel_col)
+          ->{is_nullable};
     }
 
     $if_not_submitted = $all_fks_nullable ? 'set_to_null' : 'delete'
-        unless defined $if_not_submitted;
+      unless defined $if_not_submitted;
 
     # the only valid datatype for a has_many rels is an arrayref
     if ( $info->{attrs}{accessor} eq 'multi' ) {
 
         # handle undef like empty arrayref
         $updates = []
-            unless defined $updates;
-        $self->throw_exception("data for has_many relationship '$name' must be an arrayref")
-            unless ref $updates eq 'ARRAY';
+          unless defined $updates;
+        $self->throw_exception(
+            "data for has_many relationship '$name' must be an arrayref")
+          unless ref $updates eq 'ARRAY';
 
         my @updated_objs;
 
         for my $sub_updates ( @{$updates} ) {
             my $sub_object = recursive_update(
-                resultset => $related_resultset,
-                updates   => $sub_updates,
-                resolved  => $resolved
+                resultset           => $related_resultset,
+                updates             => $sub_updates,
+                resolved            => $resolved,
+                m2m_force_set_rel => $m2m_force_set_rel,
+                unknown_params_ok => $unknown_params_ok,
             );
 
             push @updated_objs, $sub_object;
@@ -327,8 +348,9 @@ sub _update_relation {
         if ( scalar @related_pks == 1 ) {
             $rs_rel_delist = $rs_rel_delist->search_rs(
                 {
-                    $self->current_source_alias . "." .
-                        $related_pks[0] => { -not_in => [ map ( $_->id, @updated_objs ) ] }
+                        $self->current_source_alias . "."
+                      . $related_pks[0] =>
+                      { -not_in => [ map ( $_->id, @updated_objs ) ] }
                 }
             );
         }
@@ -340,7 +362,7 @@ sub _update_relation {
                 my %cond_for_obj;
                 for my $col (@related_pks) {
                     $cond_for_obj{ $self->current_source_alias . ".$col" } =
-                        $obj->get_column($col);
+                      $obj->get_column($col);
 
                 }
                 push @cond, \%cond_for_obj;
@@ -348,7 +370,8 @@ sub _update_relation {
 
             # only limit resultset if there are related rows left
             if ( scalar @cond ) {
-                $rs_rel_delist = $rs_rel_delist->search_rs( { -not => [@cond] } );
+                $rs_rel_delist =
+                  $rs_rel_delist->search_rs( { -not => [@cond] } );
             }
         }
 
@@ -360,50 +383,55 @@ sub _update_relation {
             $rs_rel_delist->update( \%update );
         }
     }
-    elsif ( $info->{attrs}{accessor} eq 'single' ||
-        $info->{attrs}{accessor} eq 'filter' ) {
+    elsif ($info->{attrs}{accessor} eq 'single'
+        || $info->{attrs}{accessor} eq 'filter' )
+    {
         my $sub_object;
         if ( ref $updates ) {
             if ( blessed($updates) && $updates->isa('DBIx::Class::Row') ) {
                 $sub_object = $updates;
             }
-            elsif ( $info->{attrs}{accessor} eq 'single' &&
-                defined $object->$name )
+            elsif ( $info->{attrs}{accessor} eq 'single'
+                && defined $object->$name )
             {
                 $sub_object = recursive_update(
-                    resultset => $related_resultset,
-                    updates   => $updates,
-                    object    => $object->$name
+                    resultset           => $related_resultset,
+                    updates             => $updates,
+                    object              => $object->$name,
+                    m2m_force_set_rel => $m2m_force_set_rel,
+                    unknown_params_ok => $unknown_params_ok,
                 );
             }
             else {
                 $sub_object = recursive_update(
-                    resultset => $related_resultset,
-                    updates   => $updates,
-                    resolved  => $resolved
+                    resultset           => $related_resultset,
+                    updates             => $updates,
+                    resolved            => $resolved,
+                    m2m_force_set_rel => $m2m_force_set_rel,
+                    unknown_params_ok => $unknown_params_ok,
                 );
             }
         }
         else {
             $sub_object = $related_resultset->find($updates)
-                unless (
-                !$updates &&
-                ( exists $info->{attrs}{join_type} &&
-                    $info->{attrs}{join_type} eq 'LEFT' )
-                );
+              unless (
+                !$updates
+                && ( exists $info->{attrs}{join_type}
+                    && $info->{attrs}{join_type} eq 'LEFT' )
+              );
         }
         $object->set_from_related( $name, $sub_object )
-            unless (
-            !$sub_object &&
-            !$updates &&
-            ( exists $info->{attrs}{join_type} &&
-                $info->{attrs}{join_type} eq 'LEFT' )
-            );
+          unless (
+               !$sub_object
+            && !$updates
+            && ( exists $info->{attrs}{join_type}
+                && $info->{attrs}{join_type} eq 'LEFT' )
+          );
     }
     else {
         $self->throw_exception(
-            "recursive_update doesn't now how to handle relationship '$name' with accessor " .
-                $info->{attrs}{accessor} );
+"recursive_update doesn't now how to handle relationship '$name' with accessor "
+              . $info->{attrs}{accessor} );
     }
 }
 
@@ -416,9 +444,10 @@ sub is_m2m {
         return $rclass->_m2m_metadata->{$relation};
     }
     my $object = $self->new_result( {} );
-    if ( $object->can($relation) and
-        !$self->result_source->has_relationship($relation) and
-        $object->can( 'set_' . $relation ) ) {
+    if (    $object->can($relation)
+        and !$self->result_source->has_relationship($relation)
+        and $object->can( 'set_' . $relation ) )
+    {
         return 1;
     }
     return;
@@ -432,7 +461,8 @@ sub get_m2m_source {
     if ( $rclass->can('_m2m_metadata') ) {
         return $self->result_source->related_source(
             $rclass->_m2m_metadata->{$relation}{relation} )
-            ->related_source( $rclass->_m2m_metadata->{$relation}{foreign_relation} );
+          ->related_source(
+            $rclass->_m2m_metadata->{$relation}{foreign_relation} );
     }
     my $object = $self->new_result( {} );
     my $r = $object->$relation;
@@ -443,10 +473,11 @@ sub _delete_empty_auto_increment {
     my ( $self, $object ) = @_;
     for my $col ( keys %{ $object->{_column_data} } ) {
         if (
-            $object->result_source->column_info($col)->{is_auto_increment} and
-            ( !defined $object->{_column_data}{$col} or
-                $object->{_column_data}{$col} eq '' )
-            ) {
+            $object->result_source->column_info($col)->{is_auto_increment}
+            and ( !defined $object->{_column_data}{$col}
+                or $object->{_column_data}{$col} eq '' )
+          )
+        {
             delete $object->{_column_data}{$col};
         }
     }
@@ -479,7 +510,7 @@ sub _master_relation_cond {
 
     # has_many rels are always after
     return 0
-        if $info->{attrs}->{accessor} eq 'multi';
+      if $info->{attrs}->{accessor} eq 'multi';
 
     my @foreign_ids = _get_pk_for_related( $self, $name );
 
@@ -491,7 +522,7 @@ sub _master_relation_cond {
         while ( my ( $f_key, $col ) = each %{$cond} ) {
 
             # might_have is not master
-            $col   =~ s/^self\.//;
+            $col =~ s/^self\.//;
             $f_key =~ s/^foreign\.//;
             if ( $source->column_info($col)->{is_auto_increment} ) {
                 return 0;
@@ -514,7 +545,8 @@ sub _master_relation_cond {
         }
     }
     else {
-        $source->throw_exception( "unhandled relation condition " . ref($cond) );
+        $source->throw_exception(
+            "unhandled relation condition " . ref($cond) );
     }
     return;
 }
